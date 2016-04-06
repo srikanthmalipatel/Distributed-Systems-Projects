@@ -3,9 +3,19 @@ package edu.buffalo.cse.cse486586.groupmessenger2;
 import android.content.ContentProvider;
 import android.content.ContentValues;
 import android.database.Cursor;
+import android.database.MatrixCursor;
 import android.net.Uri;
 import android.util.Log;
+import java.io.DataInputStream;
+import java.io.DataOutputStream;
+import java.io.FileInputStream;
+import java.io.FileOutputStream;
+import java.io.File;
+import java.io.FileWriter;
+import java.io.IOException;
+import java.io.OutputStream;
 
+import android.content.Context;
 /**
  * GroupMessengerProvider is a key-value table. Once again, please note that we do not implement
  * full support for SQL as a usual ContentProvider does. We re-purpose ContentProvider's interface
@@ -25,6 +35,7 @@ import android.util.Log;
  *
  */
 public class GroupMessengerProvider extends ContentProvider {
+    private static final String TAG = GroupMessengerProvider.class.getName();
 
     @Override
     public int delete(Uri uri, String selection, String[] selectionArgs) {
@@ -50,6 +61,16 @@ public class GroupMessengerProvider extends ContentProvider {
          * internal storage option that we used in PA1. If you want to use that option, please
          * take a look at the code for PA1.
          */
+        String filename = values.getAsString("key");
+        String message = values.getAsString("value");
+
+        try {
+            FileOutputStream outputStream = new FileOutputStream(new File(getContext().getFilesDir() + "/" + filename));
+            outputStream.write(message.getBytes());
+            outputStream.close();
+        } catch (Exception e) {
+            Log.e(TAG, "File write failed");
+        }
         Log.v("insert", values.toString());
         return uri;
     }
@@ -80,6 +101,24 @@ public class GroupMessengerProvider extends ContentProvider {
          * recommend building a MatrixCursor described at:
          * http://developer.android.com/reference/android/database/MatrixCursor.html
          */
+
+        String[] columns = new String[] {"key", "value"};
+        try {
+            int byteRead;
+            StringBuffer sBuff = new StringBuffer("");
+            FileInputStream inputStream = new FileInputStream(getContext().getFilesDir() + "/" + selection);
+            while((byteRead = inputStream.read()) != -1) {
+                sBuff.append((char)byteRead);
+            }
+            inputStream.close();
+
+            MatrixCursor mcursor = new MatrixCursor(columns);
+            mcursor.addRow(new String[] {selection, sBuff.toString()});
+            return mcursor;
+        } catch (Exception e) {
+            Log.e(TAG, "File Read failed");
+        }
+
         Log.v("query", selection);
         return null;
     }
