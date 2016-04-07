@@ -12,12 +12,14 @@ import java.io.PrintWriter;
 import java.io.BufferedReader;
 import java.io.InputStreamReader;
 import java.io.FileOutputStream;
+import java.io.FileInputStream;
 import java.io.File;
 
 import android.content.ContentProvider;
 import android.content.ContentValues;
 import android.content.Context;
 import android.database.Cursor;
+import android.database.MatrixCursor;
 import android.net.Uri;
 import android.os.AsyncTask;
 import android.telephony.TelephonyManager;
@@ -29,6 +31,8 @@ import android.util.Log;
     ADD-%predecessor%-%successor%                                   - Update the new nodes predecessor/successor
     UPDATEP-%predecessor%                                           - Update a nodes predecessor information
     UPDATES-%successor%                                             - Update a nodes successor information
+    INSERTKEY-%key%-%value%                                         - Inserts key into the provider
+
  */
 
 public class SimpleDhtProvider extends ContentProvider {
@@ -90,6 +94,14 @@ public class SimpleDhtProvider extends ContentProvider {
             Log.e("Insert Comparision", "hashId > nextId");
         if (hashId.compareTo(nextId) < 0)
             Log.e("Insert Comparision", "hashId < nextId");
+        if (hashId.compareTo(preId) < 0)
+            Log.e("Insert Comparision", "hashId < preId");
+        if (hashId.compareTo(preId) > 0)
+            Log.e("Insert Comparision", "hashId > preId");
+        if (nodeId.compareTo(preId) > 0)
+            Log.e("Insert Comparision", "nodeId > preId");
+        if (nodeId.compareTo(preId) < 0)
+            Log.e("Insert Comparision", "nodeId < preId");
 
         // check if there is only one node in the system
         if(myPort == preNode && myPort == nextNode) {
@@ -97,7 +109,7 @@ public class SimpleDhtProvider extends ContentProvider {
             return insertIntoProvider(uri, values);
         } else if(hashId.compareTo(nodeId) < 0) {
             // send an update message with info about successor/predecessor to new node
-            if(hashId.compareTo(preId) > 0 || nodeId.compareTo(preId) < 0) {
+            if(hashId.compareTo(preId) > 0 || (nodeId.compareTo(preId) < 0 && hashId.compareTo(preId) < 0)) {
                 return insertIntoProvider(uri, values);
                 //Log.e("insert", "Added new node. current node count is " + nodeCount);
                 //Log.e("addNode", "currentNode: " + myPort + " predecessor: " + preNode + " successor: " + nextNode);
@@ -107,7 +119,7 @@ public class SimpleDhtProvider extends ContentProvider {
                 new ClientTask().executeOnExecutor(AsyncTask.SERIAL_EXECUTOR, msg, preNode);
             }
         } else if(hashId.compareTo(nodeId) > 0){
-            if(nodeId.compareTo(preId) < 0) {
+            if(nodeId.compareTo(preId) < 0 && hashId.compareTo(preId) > 0) {
                 return insertIntoProvider(uri, values);
             } else {
                 Log.e("insert", "Forwarding the key to its successor: " + nextNode);
@@ -188,6 +200,54 @@ public class SimpleDhtProvider extends ContentProvider {
     public Cursor query(Uri uri, String[] projection, String selection, String[] selectionArgs,
             String sortOrder) {
         // TODO Auto-generated method stub
+        String[] columns = new String[] {"key", "value"};
+        if(selection.contains("@") || selection.contains("*")) {
+            try {
+                int byteRead;
+                MatrixCursor mcursor = new MatrixCursor(columns);
+
+                // refered directory listing code from http://stackoverflow.com/questions/4917326/how-to-iterate-over-the-files-of-a-certain-directory-in-java
+                Log.e("query", "File path: " + getContext().getFilesDir());
+                File dir = new File(getContext().getFilesDir() + "");
+                File[] directoryListing = dir.listFiles();
+                if (directoryListing != null) {
+                    for (File child : directoryListing) {
+                        StringBuffer sBuff = new StringBuffer("");
+                        FileInputStream inputStream = new FileInputStream(child);
+                        while((byteRead = inputStream.read()) != -1) {
+                            sBuff.append((char)byteRead);
+                        }
+                        inputStream.close();
+                        mcursor.addRow(new String[] {child.getName(), sBuff.toString()});
+                    }
+                }
+                return mcursor;
+            } catch (Exception e) {
+                Log.e(TAG, "File Read failed");
+            }
+
+            //MatrixCursor mcursor = new MatrixCursor(projection);
+            Log.v("query", selection);
+        } else {
+            try {
+                int byteRead;
+                StringBuffer sBuff = new StringBuffer("");
+                Log.e("query", "File path: " + getContext().getFilesDir() + "/" + selection);
+                FileInputStream inputStream = new FileInputStream(new File(getContext().getFilesDir() + "/" + selection));
+                while((byteRead = inputStream.read()) != -1) {
+                    sBuff.append((char)byteRead);
+                }
+                inputStream.close();
+
+                MatrixCursor mcursor = new MatrixCursor(columns);
+                mcursor.addRow(new String[] {selection, sBuff.toString()});
+                return mcursor;
+            } catch (Exception e) {
+                Log.e(TAG, "File Read failed");
+            }
+            Log.v("query", selection);
+        }
+
         return null;
     }
 
