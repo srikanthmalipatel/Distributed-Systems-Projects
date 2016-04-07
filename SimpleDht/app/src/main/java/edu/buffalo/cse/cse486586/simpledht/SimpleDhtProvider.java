@@ -56,10 +56,18 @@ public class SimpleDhtProvider extends ContentProvider {
     private static Uri mUri;
     private static final String KEY_FIELD = "key";
     private static final String VALUE_FIELD = "value";
+    private static final String[] columns = new String[] {"key", "value"};
+
+    // Variables for query functionality
+    private static boolean isFound = true;
+    private static String queryResult = null;
 
     @Override
     public int delete(Uri uri, String selection, String[] selectionArgs) {
         // TODO Auto-generated method stub
+        if(selection.contains("*") || selection.contains("@")) {
+            
+        }
         return 0;
     }
 
@@ -200,8 +208,8 @@ public class SimpleDhtProvider extends ContentProvider {
     public Cursor query(Uri uri, String[] projection, String selection, String[] selectionArgs,
             String sortOrder) {
         // TODO Auto-generated method stub
-        String[] columns = new String[] {"key", "value"};
-        if(selection.contains("@") || selection.contains("*")) {
+
+        if(selection.contains("@")) {
             try {
                 int byteRead;
                 MatrixCursor mcursor = new MatrixCursor(columns);
@@ -228,9 +236,30 @@ public class SimpleDhtProvider extends ContentProvider {
 
             //MatrixCursor mcursor = new MatrixCursor(projection);
             Log.v("query", selection);
-        } else {
+        } else if(selection.contains("*")) {
+            Cursor resCursor = queryAllInMyNode();
+            if(myPort == preNode && myPort == nextNode)
+                return resCursor;
+            String msg = buildString(resCursor);
+            forwardQuery(myPort, "*", msg);
+
+            while(isFound);
+
+            Log.e("Final String", queryResult);
+            MatrixCursor mcursor = new MatrixCursor(columns);
+            String[] qryArr = queryResult.split("::");
+            for(String res : qryArr) {
+                Log.e("Process each string", res);
+                String[] keyVals = res.split("%");
+                mcursor.addRow(new String[] {keyVals[0], keyVals[1]});
+            }
+            queryResult = null;
+            isFound = true;
+            return mcursor;
+        }
+        else {
             try {
-                int byteRead;
+                /* int byteRead;
                 StringBuffer sBuff = new StringBuffer("");
                 Log.e("query", "File path: " + getContext().getFilesDir() + "/" + selection);
                 FileInputStream inputStream = new FileInputStream(new File(getContext().getFilesDir() + "/" + selection));
@@ -241,7 +270,26 @@ public class SimpleDhtProvider extends ContentProvider {
 
                 MatrixCursor mcursor = new MatrixCursor(columns);
                 mcursor.addRow(new String[] {selection, sBuff.toString()});
-                return mcursor;
+                return mcursor; */
+                Cursor resCursor = queryMyNode(selection);
+                if((myPort == preNode && myPort == nextNode) || resCursor != null) {
+                    return resCursor;
+                }
+                else if(resCursor == null) {
+                    forwardQuery(myPort, selection, "");
+
+                    // wait till the key is found in other avd's or till it completes full circle in the ring
+                    while(isFound);
+
+                    // if any avd has returned the key then create a cursor and return it
+                    String res[] = queryResult.split("%");
+
+                    MatrixCursor mcursor = new MatrixCursor(columns);
+                    mcursor.addRow(new String[] {res[0], res[1]});
+                    isFound = true;
+                    queryResult = null;
+                    return mcursor;
+                }
             } catch (Exception e) {
                 Log.e(TAG, "File Read failed");
             }
@@ -249,6 +297,119 @@ public class SimpleDhtProvider extends ContentProvider {
         }
 
         return null;
+    }
+
+    public void forwardQuery(String srcPort, String selection, String keyVals) {
+        //Log.e("query", "Could not find selection in this Node! Forwarding the query to its successor");
+        String msg = null;
+        if(selection.equals("*")) {
+            msg = "QUERYALL-" + srcPort + "-" + keyVals;
+            Log.e("forwardQuery", "Forwarding Query all to its successor");
+        }else {
+            msg = "QUERYF-" + srcPort + "-" + selection;
+            Log.e("forwardQuery", "Could not find selection in this Node! Forwarding the query to its successor");
+        }
+        new ClientTask().executeOnExecutor(AsyncTask.SERIAL_EXECUTOR, msg, nextNode);
+    }
+
+    public Cursor queryMyNode(String selection) {
+        Log.e("queryMyNode", "querying for selection: " + selection);
+        try {
+            int byteRead;
+            MatrixCursor mcursor = new MatrixCursor(columns);
+            boolean isSelectionFound = false;
+
+            // refered directory listing code from http://stackoverflow.com/questions/4917326/how-to-iterate-over-the-files-of-a-certain-directory-in-java
+            //Log.e("queryNode", "File path: " + getContext().getFilesDir());
+            File dir = new File(getContext().getFilesDir() + "");
+            File[] directoryListing = dir.listFiles();
+            if (directoryListing != null) {
+                for (File child : directoryListing) {
+                    if(child.getName().equals(selection)) {
+                        Log.e("queryMyNode", "Found selection: " + selection);
+                        isSelectionFound = true;
+                        StringBuffer sBuff = new StringBuffer("");
+                        FileInputStream inputStream = new FileInputStream(child);
+                        while ((byteRead = inputStream.read()) != -1) {
+                            sBuff.append((char) byteRead);
+                        }
+                        inputStream.close();
+                        mcursor.addRow(new String[]{child.getName(), sBuff.toString()});
+                    }
+                }
+            }
+            if(isSelectionFound)
+                return mcursor;
+            else
+                return null;
+        } catch (Exception e) {
+            Log.e(TAG, "File Read failed");
+        }
+
+        //MatrixCursor mcursor = new MatrixCursor(projection);
+        Log.v("queryMyNode", selection);
+        return null;
+    }
+
+    public Cursor queryAllInMyNode() {
+        try {
+            int byteRead;
+            MatrixCursor mcursor = new MatrixCursor(columns);
+
+            // refered directory listing code from http://stackoverflow.com/questions/4917326/how-to-iterate-over-the-files-of-a-certain-directory-in-java
+            //Log.e("queryNode", "File path: " + getContext().getFilesDir());
+            File dir = new File(getContext().getFilesDir() + "");
+            File[] directoryListing = dir.listFiles();
+            if (directoryListing != null) {
+                for (File child : directoryListing) {
+                    StringBuffer sBuff = new StringBuffer("");
+                    FileInputStream inputStream = new FileInputStream(child);
+                    while ((byteRead = inputStream.read()) != -1) {
+                        sBuff.append((char) byteRead);
+                    }
+                    inputStream.close();
+                    mcursor.addRow(new String[]{child.getName(), sBuff.toString()});
+                }
+            }
+            return mcursor;
+        } catch (Exception e) {
+            Log.e(TAG, "File Read failed");
+        }
+
+        //MatrixCursor mcursor = new MatrixCursor(projection);
+        return null;
+    }
+
+    public void forwardQueryResult(String srcPort, Cursor resCursor) {
+        Log.e("forwardQueryResult", "Found the selection, forwarding the result to Source");
+        String msg = "QUERYR-";
+        int i = 0;
+        while(resCursor.moveToNext()) {
+            if(i != 0)
+                msg += "::";
+            String key = resCursor.getString(resCursor.getColumnIndex("key"));
+            String value = resCursor.getString(resCursor.getColumnIndex("value"));
+            msg += key + "%" + value;
+            i++;
+        }
+        resCursor.close();
+        new ClientTask().executeOnExecutor(AsyncTask.SERIAL_EXECUTOR, msg, srcPort);
+    }
+
+    public String buildString(Cursor resCursor) {
+        Log.e("buildString", "Constructing result with all keys and values");
+        String msg = "";
+        int i = 0;
+        while(resCursor.moveToNext()) {
+            if(i != 0)
+                msg += "::";
+            String key = resCursor.getString(resCursor.getColumnIndex("key"));
+            String value = resCursor.getString(resCursor.getColumnIndex("value"));
+            msg += key + "%" + value;
+            i++;
+        }
+        resCursor.close();
+        return msg;
     }
 
     @Override
@@ -418,6 +579,39 @@ public class SimpleDhtProvider extends ContentProvider {
                             values.put(KEY_FIELD, msg[1]);
                             values.put(VALUE_FIELD, msg[2]);
                             insert(mUri, values);
+                        }
+
+                        if(line.contains("QUERYF")) {
+                            String[] msg = line.split("-");
+                            if(myPort.equals(msg[1])) {
+                                queryResult = null;
+                                isFound = false;
+                            } else {
+                                Cursor resCursor = queryMyNode(msg[2]);
+                                if (resCursor == null)
+                                    forwardQuery(msg[1], msg[2], "");
+                                else {
+                                    forwardQueryResult(msg[1], resCursor);
+                                }
+                            }
+                        }
+
+                        if(line.contains("QUERYR")) {
+                            String[] msg = line.split("-");
+                            queryResult = msg[1];
+                            isFound = false;
+                        }
+
+                        if(line.contains("QUERYALL")) {
+                            String[] msg = line.split("-");
+                            if(myPort.equals(msg[1])) {
+                                queryResult = msg[2];
+                                isFound = false;
+                            } else {
+                                String qryRes = buildString(queryAllInMyNode());
+                                msg[2] += "::" + qryRes;
+                                forwardQuery(msg[1], "*", msg[2]);
+                            }
                         }
                     }
 
