@@ -66,7 +66,22 @@ public class SimpleDhtProvider extends ContentProvider {
     public int delete(Uri uri, String selection, String[] selectionArgs) {
         // TODO Auto-generated method stub
         if(selection.contains("*") || selection.contains("@")) {
-            
+            try {
+                // refered directory listing code from http://stackoverflow.com/questions/4917326/how-to-iterate-over-the-files-of-a-certain-directory-in-java
+                Log.e("query", "File path: " + getContext().getFilesDir());
+                File dir = new File(getContext().getFilesDir() + "");
+                File[] directoryListing = dir.listFiles();
+                if (directoryListing != null) {
+                    for (File child : directoryListing) {
+                        child.delete();
+                    }
+                }
+            } catch (Exception e) {
+                Log.e(TAG, "File Read failed");
+            }
+
+            //MatrixCursor mcursor = new MatrixCursor(projection);
+            return 0;
         }
         return 0;
     }
@@ -250,8 +265,10 @@ public class SimpleDhtProvider extends ContentProvider {
             String[] qryArr = queryResult.split("::");
             for(String res : qryArr) {
                 Log.e("Process each string", res);
-                String[] keyVals = res.split("%");
-                mcursor.addRow(new String[] {keyVals[0], keyVals[1]});
+                if(!res.equals("")) {
+                    String[] keyVals = res.split("%");
+                    mcursor.addRow(new String[]{keyVals[0], keyVals[1]});
+                }
             }
             queryResult = null;
             isFound = true;
@@ -609,8 +626,12 @@ public class SimpleDhtProvider extends ContentProvider {
                                 isFound = false;
                             } else {
                                 String qryRes = buildString(queryAllInMyNode());
-                                msg[2] += "::" + qryRes;
-                                forwardQuery(msg[1], "*", msg[2]);
+                                if(msg.length == 2) {
+                                    forwardQuery(msg[1], "*", qryRes);
+                                } else {
+                                    msg[2] += "::" + qryRes;
+                                    forwardQuery(msg[1], "*", msg[2]);
+                                }
                             }
                         }
                     }
