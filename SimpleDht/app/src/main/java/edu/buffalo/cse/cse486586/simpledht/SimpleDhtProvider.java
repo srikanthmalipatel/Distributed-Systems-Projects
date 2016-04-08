@@ -73,6 +73,7 @@ public class SimpleDhtProvider extends ContentProvider {
                 File[] directoryListing = dir.listFiles();
                 if (directoryListing != null) {
                     for (File child : directoryListing) {
+                        Log.e("Delete", "Deleting file " + child.getName());
                         child.delete();
                     }
                 }
@@ -82,6 +83,22 @@ public class SimpleDhtProvider extends ContentProvider {
 
             //MatrixCursor mcursor = new MatrixCursor(projection);
             return 0;
+        } else {
+            try {
+                Log.e("query", "File path: " + getContext().getFilesDir());
+                File dir = new File(getContext().getFilesDir() + "");
+                File[] directoryListing = dir.listFiles();
+                if (directoryListing != null) {
+                    for (File child : directoryListing) {
+                        if (child.getName().equals(selection)) {
+                            Log.e("Delete", "Deleting file " + child.getName());
+                            child.delete();
+                        }
+                    }
+                }
+            } catch (Exception e) {
+                Log.e(TAG, "File Read failed");
+            }
         }
         return 0;
     }
@@ -622,7 +639,11 @@ public class SimpleDhtProvider extends ContentProvider {
                         if(line.contains("QUERYALL")) {
                             String[] msg = line.split("-");
                             if(myPort.equals(msg[1])) {
-                                queryResult = msg[2];
+                                if(msg.length == 2) {
+                                    queryResult = "";
+                                } else {
+                                    queryResult = msg[2];
+                                }
                                 isFound = false;
                             } else {
                                 String qryRes = buildString(queryAllInMyNode());
