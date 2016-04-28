@@ -31,7 +31,7 @@ public class SimpleDynamoProvider extends ContentProvider {
     static final String TAG = SimpleDynamoProvider.class.getSimpleName();
 
     static final int SERVER_PORT = 10000;
-    static final String[] REMOTE_PORTS = new String[] {"11108", "11112", "11116", "11120", "11124"};
+    static String[] RING_PORTS = new String[] {"11124", "11112", "11108", "11116", "11120"};
     static String myPort;
 
     // Variables for maintaining the Dynamo Ring
@@ -59,36 +59,36 @@ public class SimpleDynamoProvider extends ContentProvider {
         if(selection.contains("*") || selection.contains("@")) {
             try {
                 // refered directory listing code from http://stackoverflow.com/questions/4917326/how-to-iterate-over-the-files-of-a-certain-directory-in-java
-                Log.e("query", "File path: " + getContext().getFilesDir());
+                Log.d("query", "File path: " + getContext().getFilesDir());
                 File dir = new File(getContext().getFilesDir() + "");
                 File[] directoryListing = dir.listFiles();
                 if (directoryListing != null) {
                     for (File child : directoryListing) {
-                        Log.e("Delete", "Deleting file " + child.getName());
+                        Log.d("Delete", "Deleting file " + child.getName());
                         child.delete();
                     }
                 }
             } catch (Exception e) {
-                Log.e(TAG, "File Read failed");
+                Log.d(TAG, "File Read failed");
             }
 
             //MatrixCursor mcursor = new MatrixCursor(projection);
             return 0;
         } else {
             try {
-                Log.e("query", "File path: " + getContext().getFilesDir());
+                Log.d("query", "File path: " + getContext().getFilesDir());
                 File dir = new File(getContext().getFilesDir() + "");
                 File[] directoryListing = dir.listFiles();
                 if (directoryListing != null) {
                     for (File child : directoryListing) {
                         if (child.getName().equals(selection)) {
-                            Log.e("Delete", "Deleting file " + child.getName());
+                            Log.d("Delete", "Deleting file " + child.getName());
                             child.delete();
                         }
                     }
                 }
             } catch (Exception e) {
-                Log.e(TAG, "File Read failed");
+                Log.d(TAG, "File Read failed");
             }
         }
         return 0;
@@ -103,62 +103,12 @@ public class SimpleDynamoProvider extends ContentProvider {
 	@Override
 	public Uri insert(Uri uri, ContentValues values) {
 		// TODO Auto-generated method stub
-        String hashId = null;
-        String preId = null;
-        String nextId = null;
 
-        try {
-            hashId = genHash(String.valueOf(values.getAsString("key")));
-            preId = genHash(String.valueOf(Integer.parseInt(preNode)/2));
-            nextId = genHash(String.valueOf(Integer.parseInt(nextNode)/2));
-        } catch (NoSuchAlgorithmException c) {
-            c.printStackTrace();
-        }
+        String insertPort = getKeyLocation(values.getAsString("key"));
+        Log.d("insert", "Inserting key " + values.getAsString("key") + " at Node " + insertPort);
 
-        Log.e("addNode", "Checking with current nodes hash: " + nodeId + " and key hash: " +  hashId);
-
-        if(hashId.compareTo(nodeId) > 0)
-            Log.e("Insert Comparision", "hashId > currentId");
-        if(hashId.compareTo(nodeId) < 0)
-            Log.e("Insert Comparision", "hashId < currentId");
-        if (hashId.compareTo(nextId) > 0)
-            Log.e("Insert Comparision", "hashId > nextId");
-        if (hashId.compareTo(nextId) < 0)
-            Log.e("Insert Comparision", "hashId < nextId");
-        if (hashId.compareTo(preId) < 0)
-            Log.e("Insert Comparision", "hashId < preId");
-        if (hashId.compareTo(preId) > 0)
-            Log.e("Insert Comparision", "hashId > preId");
-        if (nodeId.compareTo(preId) > 0)
-            Log.e("Insert Comparision", "nodeId > preId");
-        if (nodeId.compareTo(preId) < 0)
-            Log.e("Insert Comparision", "nodeId < preId");
-
-        // check if there is only one node in the system
-        // TODO: Since there is only 1 failure this case doesn't arise
-        if(myPort == preNode && myPort == nextNode) {
-            // send a message to the remotePort informing about successor and predecessor information
-            return insertIntoProvider(uri, values, repCount);
-        } else if(hashId.compareTo(nodeId) < 0) {
-            // send an update message with info about successor/predecessor to new node
-            if(hashId.compareTo(preId) > 0 || (nodeId.compareTo(preId) < 0 && hashId.compareTo(preId) < 0)) {
-                return insertIntoProvider(uri, values, repCount);
-                //Log.e("insert", "Added new node. current node count is " + nodeCount);
-                //Log.e("addNode", "currentNode: " + myPort + " predecessor: " + preNode + " successor: " + nextNode);
-            } else {
-                Log.e("insert", "Forwarding the key to its predecessor: " + preNode);
-                String msg = "INSERTKEY-" + values.getAsString("key") + "-" + values.getAsString("value");
-                new ClientTask().executeOnExecutor(AsyncTask.SERIAL_EXECUTOR, msg, preNode);
-            }
-        } else if(hashId.compareTo(nodeId) > 0){
-            if(nodeId.compareTo(preId) < 0 && hashId.compareTo(preId) > 0) {
-                return insertIntoProvider(uri, values, repCount);
-            } else {
-                Log.e("insert", "Forwarding the key to its successor: " + nextNode);
-                String msg = "INSERTKEY-" + values.getAsString("key") + "-" + values.getAsString("value");
-                new ClientTask().executeOnExecutor(AsyncTask.SERIAL_EXECUTOR, msg, nextNode);
-            }
-        }
+        String msg = "INSERTKEY-" + values.getAsString("key") + "-" + values.getAsString("value");
+        new ClientTask().executeOnExecutor(AsyncTask.SERIAL_EXECUTOR, msg, insertPort);
         return null;
 	}
 
@@ -170,7 +120,7 @@ public class SimpleDynamoProvider extends ContentProvider {
         final String portStr = tel.getLine1Number().substring(tel.getLine1Number().length() - 4);
         myPort = String.valueOf((Integer.parseInt(portStr) * 2));
 
-        Log.e(TAG, "Launching AVD-" + portStr);
+        Log.d(TAG, "Launching AVD-" + portStr);
 
         mUri = buildUri("content", "edu.buffalo.cse.cse486586.simpledynamo.provider");
 
@@ -178,17 +128,17 @@ public class SimpleDynamoProvider extends ContentProvider {
 
         initializeRing();
 
-        Log.e(TAG, "currentNode: " + myPort + " predecessor: " + preNode + " successor: " + nextNode);
+        Log.d(TAG, "currentNode: " + myPort + " predecessor: " + preNode + " successor: " + nextNode);
 
         try {
             ServerSocket serverSocket = new ServerSocket(SERVER_PORT, 20);
             new ServerTask().executeOnExecutor(AsyncTask.THREAD_POOL_EXECUTOR, serverSocket);
         } catch (IOException e) {
-            Log.e(TAG, "Can't create a ServerSocket");
+            Log.d(TAG, "Can't create a ServerSocket");
             return false;
         }
 
-        Log.e(TAG, "Server task created on AVD-" + portStr);
+        Log.d(TAG, "Server task created on AVD-" + portStr);
 
 		return false;
 	}
@@ -207,7 +157,7 @@ public class SimpleDynamoProvider extends ContentProvider {
                 MatrixCursor mcursor = new MatrixCursor(columns);
 
                 // refered directory listing code from http://stackoverflow.com/questions/4917326/how-to-iterate-over-the-files-of-a-certain-directory-in-java
-                Log.e("query", "File path: " + getContext().getFilesDir());
+                Log.d("query", "File path: " + getContext().getFilesDir());
                 File dir = new File(getContext().getFilesDir() + "");
                 File[] directoryListing = dir.listFiles();
                 if (directoryListing != null) {
@@ -224,7 +174,7 @@ public class SimpleDynamoProvider extends ContentProvider {
                 isQueryRunning = false;
                 return mcursor;
             } catch (Exception e) {
-                Log.e(TAG, "File Read failed");
+                Log.d(TAG, "File Read failed");
             }
 
             //MatrixCursor mcursor = new MatrixCursor(projection);
@@ -238,11 +188,11 @@ public class SimpleDynamoProvider extends ContentProvider {
 
             while(isFound);
 
-            Log.e("Final String", queryResult);
+            Log.d("Final String", queryResult);
             MatrixCursor mcursor = new MatrixCursor(columns);
             String[] qryArr = queryResult.split("::");
             for(String res : qryArr) {
-                Log.e("Process each string", res);
+                Log.d("Process each string", res);
                 if(!res.equals("")) {
                     String[] keyVals = res.split("%");
                     mcursor.addRow(new String[]{keyVals[0], keyVals[1]});
@@ -255,30 +205,29 @@ public class SimpleDynamoProvider extends ContentProvider {
         }
         else {
             try {
-                Cursor resCursor = queryMyNode(selection);
-                if((myPort == preNode && myPort == nextNode) || resCursor != null) {
-                    isQueryRunning = false;
-                    return resCursor;
-                }
-                else if(resCursor == null) {
-                    forwardQuery(myPort, selection, "");
+                String queryPort = getKeyLocation(selection);
+                Log.d("query", "Querying key: " + selection + " at Node: " + queryPort);
 
-                    // wait till the key is found in other avd's or till it completes full circle in the ring
-                    while(isFound);
+                String msg = "QUERYF-" + myPort + "-" + selection;
+                new ClientTask().executeOnExecutor(AsyncTask.SERIAL_EXECUTOR, msg, queryPort);
 
-                    // if any avd has returned the key then create a cursor and return it
-                    String res[] = queryResult.split("%");
-                    Log.d("Query:" , "Retrieved key:" + res[0] + " from remote avd");
+                // wait till the key is found in other avd's or till it completes full circle in the ring
+                while(isFound);
 
-                    MatrixCursor mcursor = new MatrixCursor(columns);
-                    mcursor.addRow(new String[] {res[0], res[1]});
-                    isFound = true;
-                    queryResult = null;
-                    isQueryRunning = false;
-                    return mcursor;
-                }
+                // if any avd has returned the key then create a cursor and return it
+                String res[] = queryResult.split("%");
+                Log.d("Query:" , "Retrieved key:" + res[0] + " from remote avd");
+
+                MatrixCursor mcursor = new MatrixCursor(columns);
+                mcursor.addRow(new String[] {res[0], res[1]});
+                isFound = true;
+                queryResult = null;
+                isQueryRunning = false;
+                return mcursor;
+
+
             } catch (Exception e) {
-                Log.e(TAG, "File Read failed");
+                Log.d(TAG, "File Read failed");
             }
             Log.v("query", selection);
         }
@@ -298,7 +247,7 @@ public class SimpleDynamoProvider extends ContentProvider {
 
         @Override
         protected Void doInBackground(ServerSocket... sockets) {
-            Log.e(TAG, "Starting a server on this Node");
+            Log.d(TAG, "Starting a server on this Node");
             ServerSocket serverSocket = sockets[0];
 
             /*
@@ -324,7 +273,7 @@ public class SimpleDynamoProvider extends ContentProvider {
                             ContentValues values = new ContentValues();
                             values.put(KEY_FIELD, msg[1]);
                             values.put(VALUE_FIELD, msg[2]);
-                            insert(mUri, values);
+                            insertIntoProvider(mUri, values, repCount);
                         } else if(line.contains("REPLICATEKEY")) {
                             /*
                                 Message Format:
@@ -335,20 +284,11 @@ public class SimpleDynamoProvider extends ContentProvider {
                             values.put(KEY_FIELD, msg[1]);
                             values.put(VALUE_FIELD, msg[2]);
                             //int count = Integer.parseInt(msg[3]) - 1;
-                            insertIntoProvider(mUri, values, Integer.parseInt(msg[3])-1);
+                            insertIntoProvider(mUri, values, Integer.parseInt(msg[3]));
                         } else if(line.contains("QUERYF")) {
                             String[] msg = line.split("-");
-                            if(myPort.equals(msg[1])) {
-                                queryResult = null;
-                                isFound = false;
-                            } else {
-                                Cursor resCursor = queryMyNode(msg[2]);
-                                if (resCursor == null)
-                                    forwardQuery(msg[1], msg[2], "");
-                                else {
-                                    forwardQueryResult(msg[1], resCursor);
-                                }
-                            }
+                            Cursor resCursor = queryMyNode(msg[2]);
+                            forwardQueryResult(msg[1], resCursor);
                         } else if(line.contains("QUERYR")) {
                             String[] msg = line.split("-");
                             queryResult = msg[1];
@@ -375,7 +315,7 @@ public class SimpleDynamoProvider extends ContentProvider {
                     }
 
                 } catch (IOException e) {
-                    Log.e(TAG, "Failed to accept new connection");
+                    Log.d(TAG, "Failed to accept new connection");
                     e.printStackTrace();
                     break;
                 }
@@ -394,7 +334,7 @@ public class SimpleDynamoProvider extends ContentProvider {
 
         @Override
         protected Void doInBackground(String... msgs) {
-            //Log.e(TAG, "Sending join request to AVD-5554");
+            //Log.d(TAG, "Sending join request to AVD-5554");
 
 
             try {
@@ -402,7 +342,7 @@ public class SimpleDynamoProvider extends ContentProvider {
                 Socket socket = new Socket(InetAddress.getByAddress(new byte[]{10, 0, 2, 2}),
                         Integer.parseInt(msgs[1]));
 
-                Log.e("ClientTask", "Sending Message: " + msgs[0] + " to remotePort " + msgs[1]);
+                Log.d("ClientTask", "Sending Message: " + msgs[0] + " to remotePort " + msgs[1]);
 
                 msgs[0].trim();
 
@@ -413,10 +353,10 @@ public class SimpleDynamoProvider extends ContentProvider {
                 socket.close();
 
             } catch (UnknownHostException e) {
-                Log.e(TAG, "ClientTask UnknownHostException");
+                Log.d(TAG, "ClientTask UnknownHostException");
                 e.printStackTrace();
             } catch (IOException e) {
-                Log.e(TAG, "ClientTask socket IOException");
+                Log.d(TAG, "ClientTask socket IOException");
                 e.printStackTrace();
             }
 
@@ -425,11 +365,61 @@ public class SimpleDynamoProvider extends ContentProvider {
 
     }
 
+    /*
+        When inserting the key if I know the which avd the key goes into then we can send insert message to the avd
+        When querying the key if I know the avd of the key the we can send query message to the avd
+     */
+
+
+    public String getKeyLocation(String key) {
+        try {
+            // static String[] RING_PORTS = new String[] {"11124", "11112", "11108", "11116", "11120"};
+            String keyHash = genHash(key);
+            // check for cases at ring start and ring end
+            int keyHashprevHashCompare = keyHash.compareTo(genHashFromPort("11120"));
+            int keyHashcurrHashCompare = keyHash.compareTo(genHashFromPort("11124"));
+            if((keyHashprevHashCompare > 0 && keyHashcurrHashCompare > 0) || (keyHashprevHashCompare < 0 && keyHashcurrHashCompare < 0)) {
+                return "11124";
+            }
+
+            keyHashprevHashCompare = keyHashcurrHashCompare;
+            keyHashcurrHashCompare = keyHash.compareTo(genHashFromPort("11112"));
+            if(keyHashprevHashCompare > 0 && keyHashcurrHashCompare < 0) {
+                return "11112";
+            }
+
+            keyHashprevHashCompare = keyHashcurrHashCompare;
+            keyHashcurrHashCompare = keyHash.compareTo(genHashFromPort("11108"));
+            if(keyHashprevHashCompare > 0 && keyHashcurrHashCompare < 0) {
+                return "11108";
+            }
+
+            keyHashprevHashCompare = keyHashcurrHashCompare;
+            keyHashcurrHashCompare = keyHash.compareTo(genHashFromPort("11116"));
+            if(keyHashprevHashCompare > 0 && keyHashcurrHashCompare < 0) {
+                return "11116";
+            }
+
+            keyHashprevHashCompare = keyHashcurrHashCompare;
+            keyHashcurrHashCompare = keyHash.compareTo(genHashFromPort("11120"));
+            if(keyHashprevHashCompare > 0 && keyHashcurrHashCompare < 0) {
+                return "11120";
+            }
+
+
+
+        } catch (NoSuchAlgorithmException e) {
+            e.printStackTrace();
+        }
+        return null;
+    }
+
+
     // Given a key and value insert this into the provider. Currently using local storage(i.e files with key as name and
     //  value as content) as content provider
     public Uri insertIntoProvider(Uri uri, ContentValues values, int count) {
         if(count >= 0) {
-            Log.e("insertIntoProvider", "Inserting key: " + values.getAsString("key") + " into the provider with replication count: " + count);
+            Log.d("insertIntoProvider", "Inserting key: " + values.getAsString("key") + " into the provider with replication count: " + count);
             String filename = values.getAsString("key");
             String message = values.getAsString("value");
 
@@ -438,47 +428,49 @@ public class SimpleDynamoProvider extends ContentProvider {
                 outputStream.write(message.getBytes());
                 outputStream.close();
             } catch (Exception e) {
-                Log.e(TAG, "File write failed");
+                Log.d(TAG, "File write failed");
             }
 
-            // Implementing replication
-            Log.e("insertIntoProvider", "Replicating the key onto its next" + count + "successors");
-            Log.e("insertIntoProvider", "Sending Replicate message to its successor: " + nextNode);
-            String msg = "REPLICATEKEY-" + values.getAsString("key") + "-" + values.getAsString("value") + "-" + count;
-            new ClientTask().executeOnExecutor(AsyncTask.SERIAL_EXECUTOR, msg, nextNode);
+            if((count - 1) >= 0) {
+                // Implementing replication
+                Log.d("insertIntoProvider", "Replicating the key onto its next" + count + "successors");
+                Log.d("insertIntoProvider", "Sending Replicate message to its successor: " + nextNode);
+                String msg = "REPLICATEKEY-" + values.getAsString("key") + "-" + values.getAsString("value") + "-" + (count - 1);
+                new ClientTask().executeOnExecutor(AsyncTask.SERIAL_EXECUTOR, msg, nextNode);
+            }
         }
 
         return uri;
     }
 
     public void forwardQuery(String srcPort, String selection, String keyVals) {
-        //Log.e("query", "Could not find selection in this Node! Forwarding the query to its successor");
+        //Log.d("query", "Could not find selection in this Node! Forwarding the query to its successor");
         String msg = null;
         if(selection.equals("*")) {
             msg = "QUERYALL-" + srcPort + "-" + keyVals;
-            Log.e("forwardQuery", "Forwarding Query all to its successor");
+            Log.d("forwardQuery", "Forwarding Query all to its successor");
         }else {
             msg = "QUERYF-" + srcPort + "-" + selection;
-            Log.e("forwardQuery", "Could not find selection in this Node! Forwarding the query to its successor");
+            Log.d("forwardQuery", "Could not find selection in this Node! Forwarding the query to its successor");
         }
         new ClientTask().executeOnExecutor(AsyncTask.SERIAL_EXECUTOR, msg, nextNode);
     }
 
     public Cursor queryMyNode(String selection) {
-        Log.e("queryMyNode", "querying for selection: " + selection);
+        Log.d("queryMyNode", "querying for selection: " + selection);
         try {
             int byteRead;
             MatrixCursor mcursor = new MatrixCursor(columns);
             boolean isSelectionFound = false;
 
             // refered directory listing code from http://stackoverflow.com/questions/4917326/how-to-iterate-over-the-files-of-a-certain-directory-in-java
-            //Log.e("queryNode", "File path: " + getContext().getFilesDir());
+            //Log.d("queryNode", "File path: " + getContext().getFilesDir());
             File dir = new File(getContext().getFilesDir() + "");
             File[] directoryListing = dir.listFiles();
             if (directoryListing != null) {
                 for (File child : directoryListing) {
                     if(child.getName().equals(selection)) {
-                        Log.e("queryMyNode", "Found selection: " + selection);
+                        Log.d("queryMyNode", "Found selection: " + selection);
                         isSelectionFound = true;
                         StringBuffer sBuff = new StringBuffer("");
                         FileInputStream inputStream = new FileInputStream(child);
@@ -495,7 +487,7 @@ public class SimpleDynamoProvider extends ContentProvider {
             else
                 return null;
         } catch (Exception e) {
-            Log.e(TAG, "File Read failed");
+            Log.d(TAG, "File Read failed");
         }
 
         //MatrixCursor mcursor = new MatrixCursor(projection);
@@ -509,7 +501,7 @@ public class SimpleDynamoProvider extends ContentProvider {
             MatrixCursor mcursor = new MatrixCursor(columns);
 
             // refered directory listing code from http://stackoverflow.com/questions/4917326/how-to-iterate-over-the-files-of-a-certain-directory-in-java
-            //Log.e("queryNode", "File path: " + getContext().getFilesDir());
+            //Log.d("queryNode", "File path: " + getContext().getFilesDir());
             File dir = new File(getContext().getFilesDir() + "");
             File[] directoryListing = dir.listFiles();
             if (directoryListing != null) {
@@ -525,7 +517,7 @@ public class SimpleDynamoProvider extends ContentProvider {
             }
             return mcursor;
         } catch (Exception e) {
-            Log.e(TAG, "File Read failed");
+            Log.d(TAG, "File Read failed");
         }
 
         //MatrixCursor mcursor = new MatrixCursor(projection);
@@ -533,7 +525,7 @@ public class SimpleDynamoProvider extends ContentProvider {
     }
 
     public void forwardQueryResult(String srcPort, Cursor resCursor) {
-        Log.e("forwardQueryResult", "Found the selection, forwarding the result to Source");
+        Log.d("forwardQueryResult", "Found the selection, forwarding the result to Source");
         String msg = "QUERYR-";
         int i = 0;
         while(resCursor.moveToNext()) {
@@ -549,7 +541,7 @@ public class SimpleDynamoProvider extends ContentProvider {
     }
 
     public String buildString(Cursor resCursor) {
-        Log.e("buildString", "Constructing result with all keys and values");
+        Log.d("buildString", "Constructing result with all keys and values");
         String msg = "";
         int i = 0;
         while(resCursor.moveToNext()) {
@@ -565,7 +557,7 @@ public class SimpleDynamoProvider extends ContentProvider {
     }
 
     private void initializeRing() {
-        Log.e("initializeRing", "Initializing Ring");
+        Log.d("initializeRing", "Initializing Ring");
         if(myPort.equals("11108")) {
             preNode = "11112";
             nextNode = "11116";
@@ -593,7 +585,7 @@ public class SimpleDynamoProvider extends ContentProvider {
         return null;
     }
 
-    private String genHash(String input) throws NoSuchAlgorithmException {
+    private synchronized String genHash(String input) throws NoSuchAlgorithmException {
         MessageDigest sha1 = MessageDigest.getInstance("SHA-1");
         byte[] sha1Hash = sha1.digest(input.getBytes());
         Formatter formatter = new Formatter();
