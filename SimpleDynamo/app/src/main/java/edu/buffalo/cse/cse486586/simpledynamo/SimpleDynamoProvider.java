@@ -50,6 +50,7 @@ public class SimpleDynamoProvider extends ContentProvider {
 
     // Variables for query functionality
     private static boolean isFound = true;
+    private static boolean isQueryRunning = false;
     private static String queryResult = null;
 
 	@Override
@@ -193,8 +194,12 @@ public class SimpleDynamoProvider extends ContentProvider {
 	}
 
 	@Override
-	public Cursor query(Uri uri, String[] projection, String selection,
+	public synchronized Cursor query(Uri uri, String[] projection, String selection,
 			String[] selectionArgs, String sortOrder) {
+        //while(isQueryRunning);
+        //isQueryRunning = true;
+        Log.d("Query", "Currently running query on key:" + selection);
+
 		// TODO Auto-generated method stub
         if(selection.contains("@")) {
             try {
@@ -216,6 +221,7 @@ public class SimpleDynamoProvider extends ContentProvider {
                         mcursor.addRow(new String[] {child.getName(), sBuff.toString()});
                     }
                 }
+                isQueryRunning = false;
                 return mcursor;
             } catch (Exception e) {
                 Log.e(TAG, "File Read failed");
@@ -244,12 +250,14 @@ public class SimpleDynamoProvider extends ContentProvider {
             }
             queryResult = null;
             isFound = true;
+            isQueryRunning = false;
             return mcursor;
         }
         else {
             try {
                 Cursor resCursor = queryMyNode(selection);
                 if((myPort == preNode && myPort == nextNode) || resCursor != null) {
+                    isQueryRunning = false;
                     return resCursor;
                 }
                 else if(resCursor == null) {
@@ -260,11 +268,13 @@ public class SimpleDynamoProvider extends ContentProvider {
 
                     // if any avd has returned the key then create a cursor and return it
                     String res[] = queryResult.split("%");
+                    Log.d("Query:" , "Retrieved key:" + res[0] + " from remote avd");
 
                     MatrixCursor mcursor = new MatrixCursor(columns);
                     mcursor.addRow(new String[] {res[0], res[1]});
                     isFound = true;
                     queryResult = null;
+                    isQueryRunning = false;
                     return mcursor;
                 }
             } catch (Exception e) {
@@ -272,6 +282,8 @@ public class SimpleDynamoProvider extends ContentProvider {
             }
             Log.v("query", selection);
         }
+        Log.d("Query", "Completed query on key:" + selection);
+        isQueryRunning = false;
 		return null;
 	}
 
@@ -301,6 +313,7 @@ public class SimpleDynamoProvider extends ContentProvider {
                     BufferedReader input = new BufferedReader(new InputStreamReader(client.getInputStream()));
                     while((line = input.readLine()) != null ) {
                         line.trim();
+                        Log.d("ServerTask", "Recieved MSG: " + line);
                         // add your code here
                         if(line.contains("INSERTKEY")) {
                             /*
