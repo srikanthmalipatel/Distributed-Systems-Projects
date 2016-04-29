@@ -14,6 +14,7 @@ import java.io.InputStreamReader;
 import java.io.FileOutputStream;
 import java.io.FileInputStream;
 import java.io.File;
+import java.util.HashMap;
 
 import android.content.ContentProvider;
 import android.content.ContentValues;
@@ -31,7 +32,7 @@ public class SimpleDynamoProvider extends ContentProvider {
     static final String TAG = SimpleDynamoProvider.class.getSimpleName();
 
     static final int SERVER_PORT = 10000;
-    static String[] RING_PORTS = new String[] {"11124", "11112", "11108", "11116", "11120"};
+    static HashMap<String, String> RING_PORT = new HashMap<String, String>();
     static String myPort;
 
     // Variables for maintaining the Dynamo Ring
@@ -109,6 +110,11 @@ public class SimpleDynamoProvider extends ContentProvider {
 
         String msg = "INSERTKEY-" + values.getAsString("key") + "-" + values.getAsString("value");
         new ClientTask().executeOnExecutor(AsyncTask.SERIAL_EXECUTOR, msg, insertPort);
+        Log.e("insert", "Successors " + RING_PORT.get(insertPort));
+        String[] remotePorts = (RING_PORT.get(insertPort)).split("%");
+        Log.e("insert", "remotePorts: " + remotePorts[0] + " " + remotePorts[1]);
+        new ClientTask().executeOnExecutor(AsyncTask.SERIAL_EXECUTOR, msg, remotePorts[0]);
+        new ClientTask().executeOnExecutor(AsyncTask.SERIAL_EXECUTOR, msg, remotePorts[1]);
         return null;
 	}
 
@@ -273,7 +279,7 @@ public class SimpleDynamoProvider extends ContentProvider {
                             ContentValues values = new ContentValues();
                             values.put(KEY_FIELD, msg[1]);
                             values.put(VALUE_FIELD, msg[2]);
-                            insertIntoProvider(mUri, values, repCount);
+                            insertIntoProvider(mUri, values);
                         } else if(line.contains("REPLICATEKEY")) {
                             /*
                                 Message Format:
@@ -284,7 +290,7 @@ public class SimpleDynamoProvider extends ContentProvider {
                             values.put(KEY_FIELD, msg[1]);
                             values.put(VALUE_FIELD, msg[2]);
                             //int count = Integer.parseInt(msg[3]) - 1;
-                            insertIntoProvider(mUri, values, Integer.parseInt(msg[3]));
+                            insertIntoProvider(mUri, values);
                         } else if(line.contains("QUERYF")) {
                             String[] msg = line.split("-");
                             Cursor resCursor = queryMyNode(msg[2]);
@@ -417,29 +423,26 @@ public class SimpleDynamoProvider extends ContentProvider {
 
     // Given a key and value insert this into the provider. Currently using local storage(i.e files with key as name and
     //  value as content) as content provider
-    public Uri insertIntoProvider(Uri uri, ContentValues values, int count) {
-        if(count >= 0) {
-            Log.d("insertIntoProvider", "Inserting key: " + values.getAsString("key") + " into the provider with replication count: " + count);
-            String filename = values.getAsString("key");
-            String message = values.getAsString("value");
+    public Uri insertIntoProvider(Uri uri, ContentValues values) {
+        Log.d("insertIntoProvider", "Inserting key: " + values.getAsString("key") + " into the provider");
+        String filename = values.getAsString("key");
+        String message = values.getAsString("value");
 
-            try {
-                FileOutputStream outputStream = new FileOutputStream(new File(getContext().getFilesDir() + "/" + filename));
-                outputStream.write(message.getBytes());
-                outputStream.close();
-            } catch (Exception e) {
-                Log.d(TAG, "File write failed");
-            }
-
-            if((count - 1) >= 0) {
-                // Implementing replication
-                Log.d("insertIntoProvider", "Replicating the key onto its next" + count + "successors");
-                Log.d("insertIntoProvider", "Sending Replicate message to its successor: " + nextNode);
-                String msg = "REPLICATEKEY-" + values.getAsString("key") + "-" + values.getAsString("value") + "-" + (count - 1);
-                new ClientTask().executeOnExecutor(AsyncTask.SERIAL_EXECUTOR, msg, nextNode);
-            }
+        try {
+            FileOutputStream outputStream = new FileOutputStream(new File(getContext().getFilesDir() + "/" + filename));
+            outputStream.write(message.getBytes());
+            outputStream.close();
+        } catch (Exception e) {
+            Log.d(TAG, "File write failed");
         }
 
+        /*if((count - 1) >= 0) {
+            // Implementing replication
+            Log.d("insertIntoProvider", "Replicating the key onto its next" + count + "successors");
+            Log.d("insertIntoProvider", "Sending Replicate message to its successor: " + nextNode);
+            String msg = "REPLICATEKEY-" + values.getAsString("key") + "-" + values.getAsString("value") + "-" + (count - 1);
+            new ClientTask().executeOnExecutor(AsyncTask.SERIAL_EXECUTOR, msg, nextNode);
+        }*/
         return uri;
     }
 
@@ -574,6 +577,11 @@ public class SimpleDynamoProvider extends ContentProvider {
             preNode = "11120";
             nextNode = "11112";
         }
+        RING_PORT.put("11108", "11116%11120");
+        RING_PORT.put("11112", "11108%11116");
+        RING_PORT.put("11116", "11120%11124");
+        RING_PORT.put("11120", "11124%11112");
+        RING_PORT.put("11124", "11112%11108");
     }
 
     private String genHashFromPort(String port) {
